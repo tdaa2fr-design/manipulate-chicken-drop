@@ -1,68 +1,256 @@
---game where animals fall from top player clicks
---before hit the bottom
---game ends when animal hits bottom
+-- Chicken Catch Game with Slow-Motion Power-Up
 
-function love.load()
-  chickenFace = love.graphics.newImage("chicken.png")
-  backgroundImage = love.graphics.newImage("bg.png")
+local chickenFace
+local backgroundImage
 
-  math.randomseed(os.time())
-  math.random(); math.random(); math.random()
-  startx = {math.random(0, love.graphics.getWidth() - chickenFace:getWidth()), 
-            math.random(0, love.graphics.getWidth() - chickenFace:getWidth()),  
-            math.random(0, love.graphics.getWidth() - chickenFace:getWidth()),  
-            math.random(0, love.graphics.getWidth() - chickenFace:getWidth()), 
-            math.random(0, love.graphics.getWidth() - chickenFace:getWidth())}
-  starty = {0 - math.random(chickenFace:getHeight(), chickenFace:getHeight() * 2),
-            0 - math.random(chickenFace:getHeight(), chickenFace:getHeight() * 2),
-            0 - math.random(chickenFace:getHeight(), chickenFace:getHeight() * 2),
-            0 - math.random(chickenFace:getHeight(), chickenFace:getHeight() * 2),
-            0 - math.random(chickenFace:getHeight(), chickenFace:getHeight() * 2)}
+local startx = {}
+local starty = {}
+
+local numberOfChickens = 5
+local chickenSpeed = 80
+
+-- Game state
+local gameOver = false
+
+-- Power-up settings
+local powerup = {
+    x = 0,
+    y = 0,
+    radius = 22,
+    active = false,
+    respawnTimer = 0
+}
+
+local slowTimer = 0
+local slowDuration = 5       -- Slow effect lasts 5 seconds
+local slowMultiplier = 0.5   -- Chickens move at half speed
+local respawnDelay = 3       -- Wait 3 seconds before respawning
+
+-------------------------------------------------
+-- SPAWN POWER-UP
+-------------------------------------------------
+local function spawnPowerup()
+    local screenWidth = love.graphics.getWidth()
+    local screenHeight = love.graphics.getHeight()
+
+    -- Random static position within the screen
+    powerup.x = math.random(
+        powerup.radius,
+        screenWidth - powerup.radius
+    )
+
+    powerup.y = math.random(
+        powerup.radius,
+        screenHeight - powerup.radius
+    )
+
+    powerup.active = true
 end
 
 -------------------------------------------------
---MOUSE PRESS
---1 = left, 2 = right, 3 = middle wheel
+-- ACTIVATE POWER-UP
+-------------------------------------------------
+local function activatePowerup()
+    powerup.active = false
+    powerup.respawnTimer = respawnDelay
+
+    -- Reset the duration if another power-up is collected
+    slowTimer = slowDuration
+end
+
+-------------------------------------------------
+-- CHECK CHICKEN / POWER-UP COLLISION
+-------------------------------------------------
+local function chickenHitsPowerup(i)
+    local chickenWidth = chickenFace:getWidth()
+    local chickenHeight = chickenFace:getHeight()
+    local r = powerup.radius
+
+    -- Bounding-box collision check
+    return startx[i] < powerup.x + r
+       and startx[i] + chickenWidth > powerup.x - r
+       and starty[i] < powerup.y + r
+       and starty[i] + chickenHeight > powerup.y - r
+end
+
+-------------------------------------------------
+-- LOAD
+-------------------------------------------------
+function love.load()
+    chickenFace = love.graphics.newImage("chicken.png")
+    backgroundImage = love.graphics.newImage("bg.png")
+
+    math.randomseed(os.time())
+
+    -- Create the chickens
+    for i = 1, numberOfChickens do
+        startx[i] = math.random(
+            0,
+            love.graphics.getWidth() - chickenFace:getWidth()
+        )
+
+        starty[i] = -math.random(
+            chickenFace:getHeight(),
+            chickenFace:getHeight() * 2
+        )
+    end
+
+    -- Spawn the first power-up
+    spawnPowerup()
+end
+
+-------------------------------------------------
+-- MOUSE PRESS
 -------------------------------------------------
 function love.mousepressed(x, y, button, istouch)
-  if button == 1 then
-    --print("left mouse clicked")
-    for i, v in ipairs(startx) do
-      --if the mouse x and y is within the boundary of a chicken picture
-      if x >= startx[i] and x <= startx[i] + chickenFace:getWidth() and y >= starty[i] and y <= starty[i] + chickenFace:getHeight() then
-        --print("in bounds")
-        math.randomseed(os.time())
-        math.random(); math.random(); math.random()
-        --reset its y value (go back to the top)
-        starty[i] = math.random(chickenFace:getHeight(), chickenFace:getHeight() * 2) * -1
-      end
+    if button ~= 1 or gameOver then
+        return
     end
-  end
+
+    -- Check whether the player clicked the power-up
+    if powerup.active then
+        local dx = x - powerup.x
+        local dy = y - powerup.y
+
+        if dx * dx + dy * dy <=
+           powerup.radius * powerup.radius then
+            activatePowerup()
+            return
+        end
+    end
+
+    -- Otherwise, check whether the player clicked a chicken
+    for i = 1, #startx do
+        if x >= startx[i]
+        and x <= startx[i] + chickenFace:getWidth()
+        and y >= starty[i]
+        and y <= starty[i] + chickenFace:getHeight() then
+
+            -- Send the chicken back above the screen
+            starty[i] = -math.random(
+                chickenFace:getHeight(),
+                chickenFace:getHeight() * 2
+            )
+
+            -- Stop after clicking one chicken
+            return
+        end
+    end
 end
 
 -------------------------------------------------
---UPDATE
+-- UPDATE
 -------------------------------------------------
 function love.update(dt)
-  for i, v in ipairs(starty) do
-    --if chicken hits the bottom of the screen, lua quits (we lose)
-    if starty[i] + chickenFace:getHeight() >= love.graphics.getHeight() then
-      --print("over the edge")
-      love.event.quit()
+    if gameOver then
+        return
     end
-    --chickens move down 
-    starty[i] = starty[i] + 80 * dt
-  end
+
+    -- Update slow-motion timer
+    if slowTimer > 0 then
+        slowTimer = math.max(0, slowTimer - dt)
+    end
+
+    -- Respawn the power-up after it has been collected
+    if not powerup.active then
+        powerup.respawnTimer = powerup.respawnTimer - dt
+
+        if powerup.respawnTimer <= 0 then
+            spawnPowerup()
+        end
+    end
+
+    -- Determine current chicken speed
+    local currentSpeed = chickenSpeed
+
+    if slowTimer > 0 then
+        currentSpeed = chickenSpeed * slowMultiplier
+    end
+
+    -- Move chickens and check collisions
+    for i = 1, #starty do
+        starty[i] = starty[i] + currentSpeed * dt
+
+        -- A chicken can collect the power-up by touching it
+        if powerup.active and chickenHitsPowerup(i) then
+            activatePowerup()
+        end
+
+        -- Game ends if any chicken reaches the bottom
+        if starty[i] + chickenFace:getHeight()
+            >= love.graphics.getHeight() then
+            gameOver = true
+            return
+        end
+    end
 end
 
 -------------------------------------------------
---DRAW
+-- DRAW
 -------------------------------------------------
 function love.draw()
-  
-  love.graphics.draw(backgroundImage, 0, 0)
-  --draw each chicken at their respective x and y
-  for i, v in ipairs(startx) do
-    love.graphics.draw(chickenFace, startx[i], starty[i])
-  end
+    love.graphics.draw(backgroundImage, 0, 0)
+
+    -- Draw chickens
+    for i = 1, #startx do
+        love.graphics.draw(chickenFace, startx[i], starty[i])
+    end
+
+    -- Draw the stationary power-up
+    if powerup.active then
+        -- Blue circle
+        love.graphics.setColor(0.1, 0.65, 1)
+        love.graphics.circle(
+            "fill",
+            powerup.x,
+            powerup.y,
+            powerup.radius
+        )
+
+        -- White border
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.circle(
+            "line",
+            powerup.x,
+            powerup.y,
+            powerup.radius
+        )
+
+        -- Label
+        love.graphics.printf(
+            "SLOW",
+            powerup.x - powerup.radius,
+            powerup.y - 7,
+            powerup.radius * 2,
+            "center"
+        )
+    end
+
+    -- Show remaining slow-motion time
+    if slowTimer > 0 then
+        love.graphics.setColor(0.1, 0.65, 1)
+        love.graphics.print(
+            "SLOW MOTION: " .. math.ceil(slowTimer) .. "s",
+            10,
+            10
+        )
+    end
+
+    -- Restore normal drawing color
+    love.graphics.setColor(1, 1, 1)
+
+    -- Game-over screen
+    if gameOver then
+        love.graphics.setColor(1, 0.2, 0.2)
+
+        love.graphics.printf(
+            "GAME OVER!",
+            0,
+            love.graphics.getHeight() / 2,
+            love.graphics.getWidth(),
+            "center"
+        )
+
+        love.graphics.setColor(1, 1, 1)
+    end
 end
